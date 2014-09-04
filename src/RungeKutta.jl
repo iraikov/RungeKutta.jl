@@ -1,5 +1,7 @@
 module RungeKutta
 
+using DataStructures
+
 export make_rkfe, show_rkfe,
        make_rk3, show_rk3,
        make_rk4a, show_rk4a,
@@ -52,12 +54,22 @@ export make_rkfe, show_rkfe,
 ## (second revised edition, 1993).
 
 
+function foldl (f,init,v)
+    ax = init
+    for x in v
+        ax = f(x,ax)
+    end
+    return ax
+end
+
+
 function foldl1 (f,v)
     len = length(v)
     if (len >= 2)
-        reduce (f, f(v[1],v[2]), v[3:len])
+        foldl (f, f(head (v), head (tail (v))),
+               tail (tail (v)))
     elseif (len == 1)
-        v[1]
+        head (v)
     else
         throw (DomainError ())
     end
@@ -90,7 +102,7 @@ end
 
 type RCL
     den  :: Float64
-    nums ::  Union (Array{Float64}, Array{None})
+    nums ::  Union (LinkedList{Float64}, Array{None})
 end
 
 function ratToRCL (rs)
@@ -113,6 +125,18 @@ end
 function ratToReals (x)
     map (float64, x)
 end
+
+
+##   A helper function to take the difference of two arrays of
+##   rationals: we don't want to use (-) or (.-) because that requires
+##   the array to be of the same size.  We want implicit zeros at the
+##   end, as far as is necessary.
+            
+        
+## fun diffs ([], []) = []
+##  | diffs (xs, []) = xs
+##  | diffs ([], xs) = map negate xs
+##  | diffs (x::xs, y::ys) = (x +/ (negate y)) :: (diffs (xs,ys))
 
 # Helper function to sum a list of K_i, skipping unnecessary
 # multiplications
@@ -264,8 +288,8 @@ bs_rk4a = ratToRCL  ([1//6, 1//3, 1//3, 1//6])
 make_rk4a = () -> core1 (cs_rk4a, as_rk4a, bs_rk4a)
 show_rk4a = rk_show1 ("Classic fourth-order method", cs_rk4a, as_rk4a, bs_rk4a)
 
-## Kutta's other fourth-order method... "The first [above] is more popular,
-##   the second is more precise." (Hairer, Norsett, Wanner) 
+## Kutta's other fourth-order method... "The first [above] is more
+## popular, the second is more precise." (Hairer, Norsett, Wanner)
 
 cs_rk4b = ratToReals ([0, 1//3, 2//3, 1])
 as_rk4b = ratToRCLs ({[], [1//3], [-1//3, 1], [1, -1, 1]})
