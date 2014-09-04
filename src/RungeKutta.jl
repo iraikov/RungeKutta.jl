@@ -53,6 +53,37 @@ export make_rkfe, show_rkfe,
 ## Solving Ordinary Differential Equations I: Nonstiff Problems
 ## (second revised edition, 1993).
 
+function rat (n :: Int)
+    Rational (n, 1)
+end
+    
+function isempty (lst:: LinkedList{Rational{Int}})
+    return isa (lst, Nil)
+end
+
+function isempty (lst:: LinkedList{Int})
+    return isa (lst, Nil)
+end
+
+function isempty (lst:: LinkedList{Float64})
+    return isa (lst, Nil)
+end
+
+function isempty (lst:: LinkedList{Any})
+    return isa (lst, Nil)
+end
+
+function mapPartial(f::Base.Callable, l::Cons)
+    first = f(l.head)
+    l2 = (first == nothing) ? nil() : cons(first, nil(typeof(first)))
+    for h in l.tail
+        fh = f(h)
+        if (!(fh == nothing))
+            l2 = cons(fh, l2)
+        end
+    end
+    reverse(l2)
+end
 
 function foldl (f,init,v)
     ax = init
@@ -62,14 +93,23 @@ function foldl (f,init,v)
     return ax
 end
 
+function zip (l1 :: LinkedList, l2 :: LinkedList)
+    cons ((head(l1),head(l2)),zip(tail(l1),tail(l2)))
+end
 
-function foldl1 (f,v)
-    len = length(v)
-    if (len >= 2)
-        foldl (f, f(head (v), head (tail (v))),
-               tail (tail (v)))
-    elseif (len == 1)
-        head (v)
+function zip (l1 :: Nil, l2 :: Nil)
+    nil()
+end
+
+function foldl1 (f, v)
+    if isa (v, Cons)
+        let h = head (v), t = tail (v)
+            if isempty (t)
+                h
+            else
+                foldl (f, f(h, head(t)), tail(t))
+            end
+        end
     else
         throw (DomainError ())
     end
@@ -102,19 +142,19 @@ end
 
 type RCL
     den  :: Float64
-    nums ::  Union (LinkedList{Float64}, Array{None})
+    nums ::  Union (LinkedList{Float64}, Nil{Any})
 end
 
-function ratToRCL (rs)
-    if length(rs) == 0
-        return RCL(1.0, [])
-    else
-        ds = map (den, rs)
-        dp = foldl1 (*, ds)
-        ns = map (x -> num (dp * x), rs)
-        g  = reduce (gcd, dp, ns)
- 	return RCL(float64(dp / g), map (x -> float64 (x / g),  ns))
-    end
+function ratToRCL (rs :: Nil{Any})
+    return RCL(1.0, nil())
+end
+
+function ratToRCL (rs:: Cons{Rational{Int}})
+    ds = map (den, rs)
+    dp = foldl1 (*, ds)
+    ns = map (x -> num (dp * x), rs)
+    g  = foldl (gcd, dp, ns)
+    return RCL(float64(dp / g), map (x -> float64 (x / g),  ns))
 end
 
 function ratToRCLs (x)
@@ -122,9 +162,10 @@ function ratToRCLs (x)
 end
 
 
-function ratToReals (x)
+function ratToReals (x:: LinkedList{Rational{Int}})
     map (float64, x)
 end
+
 
 
 ##   A helper function to take the difference of two arrays of
@@ -142,7 +183,10 @@ end
 # multiplications
 
 function m_scale (sc_fn)
-    (sv) -> (sv[1] == 0.0) ? Nothing() : sc_fn (sv[1],sv[2])
+    (sv) ->
+    begin
+        (sv[1] == 0.0) ? Nothing() : sc_fn (sv[1],sv[2])
+    end
 end
 
 function m_sum (sum_fn)
@@ -157,7 +201,7 @@ function k_sum (sc_fn, sum_fn, h)
              d     = rcl.den
              ns    = rcl.nums
              ns_ks = zip (ns, ks)
-             return sc_fn (h / d, foldl1 (m_sum (sum_fn), map (m_scale (sc_fn), ns_ks)))
+             return sc_fn (h / d, foldl1 (m_sum (sum_fn), mapPartial (m_scale (sc_fn), ns_ks)))
          end)
     return f
 end
@@ -165,12 +209,12 @@ end
 
 function gen_ks (ksum_fn,sum_fn,der_fn,h,old,cs,ar)
     (tn,yn) = old
-    ks1 = Float64[]
+    ks1 = nil()
     yn1 = yn
     for (a,c) in zip (ar,cs)
         yn1 = isempty (ks1) ? yn : sum_fn (yn, ksum_fn (a,ks1))
         v   = der_fn (tn + c*h, yn1)
-        append!(ks1, [v])
+        ks1 = cat(ks1, list(v))
     end
     return ks1
 end
@@ -233,8 +277,20 @@ function core2 (cl, al, bl, dk)
     return f
 end
 
-function list_show (xs,show,sep,startstr,endstr)
-    string(startstr,map (show,xs),endstr)
+function list_show{T}(l::LinkedList{T},show,sep,startstr,endstr)
+    if isa(l,Nil)
+        if is(T,Any)
+            "nil()"
+        else
+            string ("nil(", T, ")")
+        end
+    else
+        string (startstr,
+                head(l),
+                sep,
+                list_show(tail (l),show,sep,"",""),
+                endstr)
+    end
 end
 
 function def_list_show (show,xs)
@@ -265,35 +321,35 @@ end
 
 ## forward Euler: unconditionally unstable: don't use this! 
 
-cs_fe = ratToReals ([0])
-as_fe = ratToRCLs ({[]})
-bs_fe = ratToRCL  ([1])
+cs_fe = ratToReals (list (rat (0)))
+as_fe = ratToRCLs (list (list ()))
+bs_fe = ratToRCL  (list (rat (1)))
 
 make_rkfe = () -> core1 (cs_fe, as_fe, bs_fe)
 show_rkfe = rk_show1 ("Forward Euler", cs_fe, as_fe, bs_fe)
 
 ## Kutta's third-order method: 
 
-cs_rk3 = ratToReals ([0, 1//2, 1])
-as_rk3 = ratToRCLs ({[], [1//2], [-1, 2]})
-bs_rk3 = ratToRCL  ([1//6, 2//3, 1//6])
+cs_rk3 = ratToReals (list (rat (0), 1//2, rat (1)))
+as_rk3 = ratToRCLs (list (list (), list (1//2), list (rat (-1), rat (2))))
+bs_rk3 = ratToRCL  (list (1//6, 2//3, 1//6))
 make_rk3 = () -> core1 (cs_rk3, as_rk3, bs_rk3)
 show_rk3 = rk_show1 ("Kutta's third-order method", cs_rk3, as_rk3, bs_rk3)
 
 ## Classic fourth-order method 
 
-cs_rk4a = ratToReals ([0, 1//2, 1//2, 1])
-as_rk4a = ratToRCLs ({[], [1//2], [0, 1//2], [0, 0, 1]})
-bs_rk4a = ratToRCL  ([1//6, 1//3, 1//3, 1//6])
+cs_rk4a = ratToReals (list (rat (0), 1//2, 1//2, rat (1)))
+as_rk4a = ratToRCLs (list (list (), list (1//2), list (rat (0), 1//2), list (rat (0), rat (0), rat (1))))
+bs_rk4a = ratToRCL  (list (1//6, 1//3, 1//3, 1//6))
 make_rk4a = () -> core1 (cs_rk4a, as_rk4a, bs_rk4a)
 show_rk4a = rk_show1 ("Classic fourth-order method", cs_rk4a, as_rk4a, bs_rk4a)
 
 ## Kutta's other fourth-order method... "The first [above] is more
 ## popular, the second is more precise." (Hairer, Norsett, Wanner)
 
-cs_rk4b = ratToReals ([0, 1//3, 2//3, 1])
-as_rk4b = ratToRCLs ({[], [1//3], [-1//3, 1], [1, -1, 1]})
-bs_rk4b = ratToRCL  ([1//8, 3//8, 3//8, 1//8])
+cs_rk4b = ratToReals (list (rat (0), 1//3, 2//3, rat (1)))
+as_rk4b = ratToRCLs (list (list (), list (1//3), list (-1//3, rat (1)), list (rat (1), rat (-1), rat (1))))
+bs_rk4b = ratToRCL  (list (1//8, 3//8, 3//8, 1//8))
 make_rk4b = () -> core1 (cs_rk4b, as_rk4b, bs_rk4b)
 show_rk4b = rk_show1 ("Kutta's other classic fourth-order method", cs_rk4b, as_rk4b, bs_rk4b)
 
