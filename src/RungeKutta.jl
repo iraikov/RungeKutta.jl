@@ -1,57 +1,58 @@
 module RungeKutta
 
-using DataStructures
+using DataStructures, FastAnonymous, Docile
 
 export make_rkfe, show_rkfe,
        make_rk3, show_rk3,
        make_rk4a, show_rk4a,
        make_rk4b, show_rk4b
        
+@doc* """
+Runge-Kutta integration of ODEs
+Based on Haskell code by Uwe Hollerbach.
 
-##
-## Runge-Kutta integration of ODEs
-## Based on Haskell code by Uwe Hollerbach <uh@alumni.caltech.edu>
-##
-## dy
-## -- = f(t, y)
-## dt
-##
-## y_{n+1} = y_n + h sum_{i=1}^s b_i k_i
-## k_i = f(t_n + c_i h, y_n + h sum_{j=1}^s a_{ij} k_j)
-##
-## "Butcher Tableau" is
-##
-## c_1  a_11 a_12 ... a_1s
-## c_2  a_21 a_22 ... a_2s
-## ...  ...
-## c_s  a_s1 a_s2 ... a_ss
-##      b_1  b_2  ... b_s
-##
-## This module implements a method that can do a generic tableau, then
-## specializes with different tableaux to let the user pick a specific
-## method. Adaptive step-size methods, see below, add a row of d_j
-## coefficients and use that to report the error:
-##
-## e_{n+1} = h sum_{i=1}^s d_i k_i
-##
-## non-adaptive solvers:
-##	rkfe, rk3, rk4a, rk4b
-##
-## adaptive solvers:
-##	rkhe, rkbs, rkf45, rkck, rkdp, rkf78, rkv65
-##
-## auxiliary non-adaptive solvers (error estimators from the adaptive ones):
-##	rkhe_aux, rkbs_aux, rkf45_aux, rkck_aux, rkdp_aux, rkf78_aux, rkv65_aux
-##
-## use rk4[ab] if you don't need an adaptive solver, rkdp or rkv65 if you do;
-## or use what you need if you're an expert.
-##
-## DO NOT USE rkfe EXCEPT FOR DEMONSTRATIONS OF INSTABILITY!
-## (Or if you're an expert.)
-##
-## Reference: E. Hairer, S. P. Norsett, G. Wanner,
-## Solving Ordinary Differential Equations I: Nonstiff Problems
-## (second revised edition, 1993).
+dy
+-- = f(t, y)
+dt
+
+y_{n+1} = y_n + h sum_{i=1}^s b_i k_i
+k_i = f(t_n + c_i h, y_n + h sum_{j=1}^s a_{ij} k_j)
+
+"Butcher Tableau" is
+
+ c_1  a_11 a_12 ... a_1s
+ c_2  a_21 a_22 ... a_2s
+ ...  ...
+ c_s  a_s1 a_s2 ... a_ss
+      b_1  b_2  ... b_s
+
+This module implements a method that can do a generic tableau, then
+specializes with different tableaux to let the user pick a specific
+method. Adaptive step-size methods, see below, add a row of d_j
+coefficients and use that to report the error:
+
+ e_{n+1} = h sum_{i=1}^s d_i k_i
+
+ non-adaptive solvers:
+	rkfe, rk3, rk4a, rk4b
+
+ adaptive solvers:
+	rkhe, rkbs, rkf45, rkck, rkdp, rkf78, rkv65
+
+ auxiliary non-adaptive solvers (error estimators from the adaptive ones):
+	rkhe_aux, rkbs_aux, rkf45_aux, rkck_aux, rkdp_aux, rkf78_aux, rkv65_aux
+
+use rk4[ab] if you don't need an adaptive solver, rkdp or rkv65 if you do;
+or use what you need if you're an expert.
+
+DO NOT USE rkfe EXCEPT FOR DEMONSTRATIONS OF INSTABILITY!
+(Or if you're an expert.)
+
+Reference: E. Hairer, S. P. Norsett, G. Wanner,
+Solving Ordinary Differential Equations I: Nonstiff Problems
+(second revised edition, 1993).
+"""
+
 
 function rat (n :: Int)
     Rational (n, 1)
@@ -220,59 +221,59 @@ function gen_ks (ksum_fn,sum_fn,der_fn,h,old,cs,ar)
 end
 
 
+@doc* """
+This is the first core routine.
 
-## This is the first core routine.
-##
-## Its arguments are:
-##
-##   c table (specified internally)
-##   a table (specified internally)
-##   b table (specified internally)
-##
-## user-specified arguments:
-##
-##   scale function to scale a Y state vector ::
-##      (real * a -> a)
-##
-##   sum function to add two Y state vectors ::
-##      (a * a -> a)
-##
-##   derivative function F ::
-##      (real * a -> a)
-##
-##   step size H ::
-##      real
-##
-##   current state (T,Y) ::
-##      (real, a)
-##
-##   and the return value is the new state Y_new
+Its arguments are:
 
+   c table (specified internally)
+   a table (specified internally)
+   b table (specified internally)
+
+user-specified arguments:
+
+   scale function to scale a Y state vector ::
+      (real * a -> a)
+
+   sum function to add two Y state vectors ::
+      (a * a -> a)
+
+   derivative function F ::
+      (real * a -> a)
+
+   step size H ::
+      real
+
+   current state (T,Y) ::
+      (real, a)
+
+   and the return value is the new state Y_new
+"""
 
     
 function core1 (cl, al, bl)
-    f = ((sc_fn, sum_fn, der_fn) ->
-         ((h) -> 
-          ((tn,yn) ->
-           begin
-               ksum = k_sum (sc_fn,sum_fn,h)
-               ks = gen_ks (ksum, sum_fn, der_fn, h, (tn,yn), cl, al)
-               return sum_fn (yn, ksum (bl, ks))
-           end)))
+    f = @anon ((sc_fn, sum_fn, der_fn) ->
+               ((h) -> 
+                ((tn,yn) ->
+                 begin
+                     ksum = k_sum (sc_fn,sum_fn,h)
+                     ks = gen_ks (ksum, sum_fn, der_fn, h, (tn,yn), cl, al)
+                     return sum_fn (yn, ksum (bl, ks))
+                 end)))
     return f
 end
 
 function core2 (cl, al, bl, dk)
-    f = ((sc_fn, sum_fn, der_fn) ->
-         ((h) -> 
-          begin
-              ksum = k_sum (sc_fn,sum_fn,h)
-              ((old) ->
-               begin
-                   ks   = gen_ks (ksum, sum_fn, der_fn, h, old, cl, al)
-                   return (sum_fn (yn, ksum (bl, ks)), ksum (dl, ks))
-               end)
-          end))
+    f = @anon ((sc_fn, sum_fn, der_fn) ->
+               ((h) -> 
+                begin
+                    ksum = k_sum (sc_fn,sum_fn,h)
+                    ((old) ->
+                     begin
+                         ks   = gen_ks (ksum, sum_fn, der_fn, h, old, cl, al)
+                         return (sum_fn (yn, ksum (bl, ks)), ksum (dl, ks))
+                     end)
+                end))
     
     return f
 end
